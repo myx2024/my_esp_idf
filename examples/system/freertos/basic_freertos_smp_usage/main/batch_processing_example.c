@@ -7,19 +7,19 @@
 #include "esp_log.h"
 #include "basic_freertos_smp_usage.h"
 
-#define DATA_BATCH_SIZE 5 //Êı¾İÅú´¦ÀíµÄ´óĞ¡
+#define DATA_BATCH_SIZE 5 //æ•°æ®æ‰¹å¤„ç†çš„å¤§å°
 
 // static TaskHandle_t proc_data_task_hdl;
 static QueueHandle_t msg_queue;
-static const uint8_t msg_queue_len = 10; //ÏûÏ¢¶ÓÁĞµÄ×î´ó³¤¶È
-static SemaphoreHandle_t s_mutex;      // mutex to protect shared resource "s_rcv_item_num" »¥³âËø±£»¤¹²Ïí×ÊÔ´
-static volatile int s_rcv_item_num;     // received data item number ½ÓÊÕÊı¾İÏîºÅ
-static volatile bool timed_out;        // ±ê¼ÇÊÇ·ñ³¬Ê±
-const static char *TAG = "batch processing example"; //Åú´¦ÀíÊ¾Àı
+static const uint8_t msg_queue_len = 10; //æ¶ˆæ¯é˜Ÿåˆ—çš„æœ€å¤§é•¿åº¦
+static SemaphoreHandle_t s_mutex;      // mutex to protect shared resource "s_rcv_item_num" äº’æ–¥é”ä¿æŠ¤å…±äº«èµ„æº
+static volatile int s_rcv_item_num;     // received data item number æ¥æ”¶æ•°æ®é¡¹å·
+static volatile bool timed_out;        // æ ‡è®°æ˜¯å¦è¶…æ—¶
+const static char *TAG = "batch processing example"; //æ‰¹å¤„ç†ç¤ºä¾‹
 
 
-//ÑİÊ¾ÈçºÎÊ¹ÓÃÈÎÎñÍ¨ÖªÀ´ÊµÏÖÅúÁ¿´¦Àí
-//»¥³âËø ºÍ ÏûÏ¢¶ÓÁĞ
+//æ¼”ç¤ºå¦‚ä½•ä½¿ç”¨ä»»åŠ¡é€šçŸ¥æ¥å®ç°æ‰¹é‡å¤„ç†
+//äº’æ–¥é” å’Œ æ¶ˆæ¯é˜Ÿåˆ—
 /* This example describes a realistic scenario where there are 2 tasks, one of them receives irregularly arrived external data,
 and the other task is responsible for processing the received data items. For some reason, every 5 data items form a batch
 and they are meant to be processed together. Once the receiving data obtains a data item, it will increment a global variable
@@ -28,20 +28,20 @@ than 5, the receiving thread sends a task notification to the processing thread,
 proceed. Processing thread dequeues the first 5 data items from the queue and process them, and finally decrease the s_rcv_item_num by 5.
 Please refer to README.md for more details.
 */
-/* Õâ¸öÀı×ÓÃèÊöÁËÒ»¸öÏÖÊµµÄ³¡¾°£¬ÆäÖĞÓĞÁ½¸öÈÎÎñ£¬ÆäÖĞÒ»¸ö½ÓÊÕ²»¹æÔòµ½´ïµÄÍâ²¿Êı¾İ£¬
-ÁíÒ»¸öÈÎÎñ¸ºÔğ´¦Àí½ÓÊÕµ½µÄÊı¾İÏî¡£ÓÉÓÚÄ³Ğ©Ô­Òò£¬Ã¿5¸öÊı¾İÏîĞÎ³ÉÒ»¸öÅú´¦Àí
-ËüÃÇÓ¦¸ÃÒ»Æğ´¦Àí¡£Ò»µ©½ÓÊÕÊı¾İ»ñµÃÒ»¸öÊı¾İÏî£¬Ëü½«Ôö¼ÓÒ»¸öÈ«¾Ö±äÁ¿
-½«s_rcv_item_numÃüÃûÎª1£¬È»ºó½«Êı¾İÑ¹Èë¶ÓÁĞ£¬¶ÓÁĞµÄ×î´ó´óĞ¡Îª10;
-µ±s_rcv_item_num²»Ğ¡ÓÚÊ±
-È»ºó£¬½ÓÊÕÏß³ÌÏò´¦ÀíÏß³Ì·¢ËÍÈÎÎñÍ¨Öª£¬´¦ÀíÏß³Ì×èÈûµÈ´ı´ËĞÅºÅ
-¼ÌĞø¡£´¦ÀíÏß³Ì´Ó¶ÓÁĞÖĞÈ¡³öÇ°5¸öÊı¾İÏî²¢´¦ÀíËüÃÇ£¬×îºó½«s_rcv_item_num¼õÉÙ5¡£
-Çë²Î¿¼README¡£MdÁË½â¸ü¶àÏêÇé¡£
+/* è¿™ä¸ªä¾‹å­æè¿°äº†ä¸€ä¸ªç°å®çš„åœºæ™¯ï¼Œå…¶ä¸­æœ‰ä¸¤ä¸ªä»»åŠ¡ï¼Œå…¶ä¸­ä¸€ä¸ªæ¥æ”¶ä¸è§„åˆ™åˆ°è¾¾çš„å¤–éƒ¨æ•°æ®ï¼Œ
+å¦ä¸€ä¸ªä»»åŠ¡è´Ÿè´£å¤„ç†æ¥æ”¶åˆ°çš„æ•°æ®é¡¹ã€‚ç”±äºæŸäº›åŸå› ï¼Œæ¯5ä¸ªæ•°æ®é¡¹å½¢æˆä¸€ä¸ªæ‰¹å¤„ç†
+å®ƒä»¬åº”è¯¥ä¸€èµ·å¤„ç†ã€‚ä¸€æ—¦æ¥æ”¶æ•°æ®è·å¾—ä¸€ä¸ªæ•°æ®é¡¹ï¼Œå®ƒå°†å¢åŠ ä¸€ä¸ªå…¨å±€å˜é‡
+å°†s_rcv_item_numå‘½åä¸º1ï¼Œç„¶åå°†æ•°æ®å‹å…¥é˜Ÿåˆ—ï¼Œé˜Ÿåˆ—çš„æœ€å¤§å¤§å°ä¸º10;
+å½“s_rcv_item_numä¸å°äºæ—¶
+ç„¶åï¼Œæ¥æ”¶çº¿ç¨‹å‘å¤„ç†çº¿ç¨‹å‘é€ä»»åŠ¡é€šçŸ¥ï¼Œå¤„ç†çº¿ç¨‹é˜»å¡ç­‰å¾…æ­¤ä¿¡å·
+ç»§ç»­ã€‚å¤„ç†çº¿ç¨‹ä»é˜Ÿåˆ—ä¸­å–å‡ºå‰5ä¸ªæ•°æ®é¡¹å¹¶å¤„ç†å®ƒä»¬ï¼Œæœ€åå°†s_rcv_item_numå‡å°‘5ã€‚
+è¯·å‚è€ƒREADMEã€‚Mdäº†è§£æ›´å¤šè¯¦æƒ…ã€‚
 */
 
 
 
 /**
-* ÈÎÎñÈë¿Úº¯Êı£¬¸ºÔğ½ÓÊÕÊı¾İ²¢½«Æä·ÅÈë¶ÓÁĞ
+* ä»»åŠ¡å…¥å£å‡½æ•°ï¼Œè´Ÿè´£æ¥æ”¶æ•°æ®å¹¶å°†å…¶æ”¾å…¥é˜Ÿåˆ—
 */
 static void rcv_data_task(void *arg)
 {
@@ -50,22 +50,22 @@ static void rcv_data_task(void *arg)
     TaskHandle_t proc_data_task_hdl = (TaskHandle_t)arg;
 
     while (!timed_out) {
-        //Ä£Äâ´ËÏß³Ì²»¹æÔò½ÓÊÕÊı¾İµÄËæ»úÑÓ³Ù
-        data = rand() % 100; //Ëæ»úÑÓ³ÙÀ´Ä£ÄâÊı¾İµÄ²»¹æÔòµ½´ï
+        //æ¨¡æ‹Ÿæ­¤çº¿ç¨‹ä¸è§„åˆ™æ¥æ”¶æ•°æ®çš„éšæœºå»¶è¿Ÿ
+        data = rand() % 100; //éšæœºå»¶è¿Ÿæ¥æ¨¡æ‹Ÿæ•°æ®çš„ä¸è§„åˆ™åˆ°è¾¾
         random_delay_ms = (rand() % 500 + 200);
         vTaskDelay(random_delay_ms / portTICK_PERIOD_MS);
-        //Ôö¼Ó½ÓÊÕÏîÄ¿ÊıÁ¿1
-        if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) { //»ñÈ¡»¥³âËø portMAX_DELAYÓÀ¾ÃµÈ´ı
+        //å¢åŠ æ¥æ”¶é¡¹ç›®æ•°é‡1
+        if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) { //è·å–äº’æ–¥é” portMAX_DELAYæ°¸ä¹…ç­‰å¾…
             s_rcv_item_num += 1;
-            xSemaphoreGive(s_mutex);//ÊÍ·Å»¥³âËø
+            xSemaphoreGive(s_mutex);//é‡Šæ”¾äº’æ–¥é”
         }
-        //½«½ÓÊÕµ½µÄÊı¾İÅÅ¶Ó¡ª¡ª¡·ÏûÏ¢¶ÓÁĞµÄ·¢ËÍ
-        (void)xQueueGenericSend(msg_queue, (void *)&data, portMAX_DELAY, queueSEND_TO_BACK);//µ±½ÓÊÕµ½Êı¾İÊ±£¬Ëü»áÔö¼Ó s_rcv_item_num ²¢½«Æä·ÅÈë¶ÓÁĞ
-        ESP_LOGI(TAG, "enqueue data = %d", data);//ÅÅ¶ÓµÄÊı¾İ
+        //å°†æ¥æ”¶åˆ°çš„æ•°æ®æ’é˜Ÿâ€”â€”ã€‹æ¶ˆæ¯é˜Ÿåˆ—çš„å‘é€
+        (void)xQueueGenericSend(msg_queue, (void *)&data, portMAX_DELAY, queueSEND_TO_BACK);//å½“æ¥æ”¶åˆ°æ•°æ®æ—¶ï¼Œå®ƒä¼šå¢åŠ  s_rcv_item_num å¹¶å°†å…¶æ”¾å…¥é˜Ÿåˆ—
+        ESP_LOGI(TAG, "enqueue data = %d", data);//æ’é˜Ÿçš„æ•°æ®
 
-        //Èç¹û s_rcv_item_num ´óÓÚµÈÓÚÅúÁ¿´óĞ¡£¬Ëü»áÏò´¦ÀíÈÎÎñ·¢ËÍÍ¨Öª¡£
+        //å¦‚æœ s_rcv_item_num å¤§äºç­‰äºæ‰¹é‡å¤§å°ï¼Œå®ƒä¼šå‘å¤„ç†ä»»åŠ¡å‘é€é€šçŸ¥ã€‚
         if (s_rcv_item_num >= DATA_BATCH_SIZE) {
-            xTaskNotifyGive(proc_data_task_hdl);//·¢³öÍ¨Öª ÒÑ¾­ÓĞ×ã¹»µÄÊı¾İ¿ÉÒÔ½øĞĞ´¦ÀíÁË
+            xTaskNotifyGive(proc_data_task_hdl);//å‘å‡ºé€šçŸ¥ å·²ç»æœ‰è¶³å¤Ÿçš„æ•°æ®å¯ä»¥è¿›è¡Œå¤„ç†äº†
         }
     }
 
@@ -73,7 +73,7 @@ static void rcv_data_task(void *arg)
 }
 
 /**
-* ÈÎÎñÈë¿Úº¯Êı£¬¸ºÔğ´¦Àí½ÓÊÕµ½µÄÊı¾İ
+* ä»»åŠ¡å…¥å£å‡½æ•°ï¼Œè´Ÿè´£å¤„ç†æ¥æ”¶åˆ°çš„æ•°æ®
 */
 static void proc_data_task(void *arg)
 {
@@ -81,30 +81,30 @@ static void proc_data_task(void *arg)
     int rcv_item_num;
     int data_idx;
     while (!timed_out) {
-        //×èÈûµÈ´ıÈÎÎñÍ¨Öª
+        //é˜»å¡ç­‰å¾…ä»»åŠ¡é€šçŸ¥
         while (ulTaskNotifyTake(pdFALSE, portMAX_DELAY)) {
-            //Ã¿´Î´ËÈÎÎñÊÕµ½Í¨ÖªÊ±£¬ÖØÖÃ½ÓÊÕµ½µÄÊı¾İÏîºÅ
+            //æ¯æ¬¡æ­¤ä»»åŠ¡æ”¶åˆ°é€šçŸ¥æ—¶ï¼Œé‡ç½®æ¥æ”¶åˆ°çš„æ•°æ®é¡¹å·
             rcv_item_num = 0;
             for (data_idx = 0; data_idx < DATA_BATCH_SIZE; data_idx++) {
-                //¼ÌĞø¶ÁÈ¡ÏûÏ¢¶ÓÁĞ£¬Ö±µ½ËüÎª¿Õ ¡ª¡ª¡·ÏûÏ¢¶ÓÁĞµÄ½ÓÊÕ
+                //ç»§ç»­è¯»å–æ¶ˆæ¯é˜Ÿåˆ—ï¼Œç›´åˆ°å®ƒä¸ºç©º â€”â€”ã€‹æ¶ˆæ¯é˜Ÿåˆ—çš„æ¥æ”¶
                 if (xQueueReceive(msg_queue, (void *)&rcv_data_buffer[data_idx], 0) == pdTRUE) {
-                    ESP_LOGI(TAG, "dequeue data = %d", rcv_data_buffer[data_idx]);//³öÁĞÊı¾İ
+                    ESP_LOGI(TAG, "dequeue data = %d", rcv_data_buffer[data_idx]);//å‡ºåˆ—æ•°æ®
                     rcv_item_num += 1;
                 } else {
                     break;
                 }
             }
 
-            // Ä£Äâ´¦Àí»º³åÇøÖĞµÄÊı¾İ£¬È»ºóÇåÀíËü
+            // æ¨¡æ‹Ÿå¤„ç†ç¼“å†²åŒºä¸­çš„æ•°æ®ï¼Œç„¶åæ¸…ç†å®ƒ
             for (data_idx = 0; data_idx < rcv_item_num; data_idx++) {
-                rcv_data_buffer[data_idx] = 0;//Èç¹ûs_rcv_item_num²»Ğ¡ÓÚÅú´¦Àí´óĞ¡£¬Ôò½«ÆäÉèÖÃÎª0
+                rcv_data_buffer[data_idx] = 0;//å¦‚æœs_rcv_item_numä¸å°äºæ‰¹å¤„ç†å¤§å°ï¼Œåˆ™å°†å…¶è®¾ç½®ä¸º0
             }
 
-            //»ñÈ¡»¥³âËø
+            //è·å–äº’æ–¥é”
             if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
-                s_rcv_item_num -= rcv_item_num;//´¦ÀíÍê³É
-                xSemaphoreGive(s_mutex);//ÊÍ·Å»¥³âËø
-                ESP_LOGI(TAG, "decrease s_rcv_item_num to %d", s_rcv_item_num);//¼õÉÙ½ÓÊÕÊı¾İÏîºÅs_rcv_item_num
+                s_rcv_item_num -= rcv_item_num;//å¤„ç†å®Œæˆ
+                xSemaphoreGive(s_mutex);//é‡Šæ”¾äº’æ–¥é”
+                ESP_LOGI(TAG, "decrease s_rcv_item_num to %d", s_rcv_item_num);//å‡å°‘æ¥æ”¶æ•°æ®é¡¹å·s_rcv_item_num
             }
         }
     }
@@ -112,31 +112,31 @@ static void proc_data_task(void *arg)
     vTaskDelete(NULL);
 }
 
-//×é¼şÈë¿Úº¯Êı£¬ÓÃÓÚÆô¶¯ÅúÁ¿´¦ÀíÊ¾Àı
-//Åú´¦ÀíÊ¾Àı:ÑİÊ¾ÈçºÎÊ¹ÓÃÈÎÎñÍ¨ÖªÊµÏÖÅú´¦Àí
-//Ê¹ÓÃ¶ÓÁĞÔÚÈÎÎñÖ®¼ä´«ÊäÊı¾İ£¬²¢Ê¹ÓÃ»¥³âËøÀ´±£»¤¹²ÏíµÄÈ«¾ÖÊı×Ö
+//ç»„ä»¶å…¥å£å‡½æ•°ï¼Œç”¨äºå¯åŠ¨æ‰¹é‡å¤„ç†ç¤ºä¾‹
+//æ‰¹å¤„ç†ç¤ºä¾‹:æ¼”ç¤ºå¦‚ä½•ä½¿ç”¨ä»»åŠ¡é€šçŸ¥å®ç°æ‰¹å¤„ç†
+//ä½¿ç”¨é˜Ÿåˆ—åœ¨ä»»åŠ¡ä¹‹é—´ä¼ è¾“æ•°æ®ï¼Œå¹¶ä½¿ç”¨äº’æ–¥é”æ¥ä¿æŠ¤å…±äº«çš„å…¨å±€æ•°å­—
 int comp_batch_proc_example_entry_func(int argc, char **argv)
 {
     timed_out = false;
 
-    s_mutex = xSemaphoreCreateMutex();//´´½¨»¥³âËø
+    s_mutex = xSemaphoreCreateMutex();//åˆ›å»ºäº’æ–¥é”
     if (s_mutex == NULL) {
         ESP_LOGE(TAG, SEM_CREATE_ERR_STR);
         return 1;
     }
-    msg_queue = xQueueGenericCreate(msg_queue_len, sizeof(int), queueQUEUE_TYPE_SET);//´´½¨ÏûÏ¢¶ÓÁĞ
+    msg_queue = xQueueGenericCreate(msg_queue_len, sizeof(int), queueQUEUE_TYPE_SET);//åˆ›å»ºæ¶ˆæ¯é˜Ÿåˆ—
     if (msg_queue == NULL) {
         ESP_LOGE(TAG, QUEUE_CREATE_ERR_STR);
         return 1;
     }
     TaskHandle_t proc_data_task_hdl;
-    xTaskCreatePinnedToCore(proc_data_task, "proc_data_task", 4096, NULL, TASK_PRIO_3, &proc_data_task_hdl, tskNO_AFFINITY);//½ÓÊÕÊı¾İ
-    xTaskCreatePinnedToCore(rcv_data_task, "rcv_data_task", 4096, proc_data_task_hdl, TASK_PRIO_3, NULL, tskNO_AFFINITY);//´¦ÀíÊı¾İ
+    xTaskCreatePinnedToCore(proc_data_task, "proc_data_task", 4096, NULL, TASK_PRIO_3, &proc_data_task_hdl, tskNO_AFFINITY);//æ¥æ”¶æ•°æ®
+    xTaskCreatePinnedToCore(rcv_data_task, "rcv_data_task", 4096, proc_data_task_hdl, TASK_PRIO_3, NULL, tskNO_AFFINITY);//å¤„ç†æ•°æ®
 
-    //³¬Ê±²¢ÔÚCOMP_LOOP_PERIODºÁÃëºóÍ£Ö¹ÔËĞĞ
+    //è¶…æ—¶å¹¶åœ¨COMP_LOOP_PERIODæ¯«ç§’ååœæ­¢è¿è¡Œ
     vTaskDelay(pdMS_TO_TICKS(COMP_LOOP_PERIOD));
     timed_out = true;
-    //ÑÓ³ÙÈÃÈÎÎñÍê³É×îºóÒ»¸öÑ­»·
+    //å»¶è¿Ÿè®©ä»»åŠ¡å®Œæˆæœ€åä¸€ä¸ªå¾ªç¯
     vTaskDelay(1500 / portTICK_PERIOD_MS);
     return 0;
 }
@@ -150,39 +150,39 @@ int comp_batch_proc_example_entry_func(int argc, char **argv)
 
 
 /**
-ÑÓÊ±µÄÁ½ÖÖ·½Ê½£º
+å»¶æ—¶çš„ä¸¤ç§æ–¹å¼ï¼š
 vTaskDelay(pdMS_TO_TICKS(COMP_LOOP_PERIOD));
 vTaskDelay(1500 / portTICK_PERIOD_MS);
-ÔÚ FreeRTOS ÖĞ£¬`vTaskDelay()` º¯ÊıÓÃÓÚÔÚÈÎÎñÖĞÔİÍ£Ö´ĞĞÒ»¶ÎÊ±¼ä¡£Õâ¸öº¯ÊıÓĞ¶àÖÖÖØÔØĞÎÊ½£¬
-ÆäÖĞÁ½ÖÖ³£¼ûµÄĞÎÊ½ÊÇÊ¹ÓÃ `TickType_t` ÀàĞÍµÄ²ÎÊıºÍÖ±½ÓÊ¹ÓÃºÁÃëÊı¡£ÕâÁ½ÖÖĞÎÊ½µÄÇø±ğÔÚÓÚËüÃÇÈçºÎ´¦ÀíÊ±¼äµ¥Î»×ª»»¡£
-1. **Ê¹ÓÃ `TickType_t` ÀàĞÍµÄ²ÎÊı**£º
+åœ¨ FreeRTOS ä¸­ï¼Œ`vTaskDelay()` å‡½æ•°ç”¨äºåœ¨ä»»åŠ¡ä¸­æš‚åœæ‰§è¡Œä¸€æ®µæ—¶é—´ã€‚è¿™ä¸ªå‡½æ•°æœ‰å¤šç§é‡è½½å½¢å¼ï¼Œ
+å…¶ä¸­ä¸¤ç§å¸¸è§çš„å½¢å¼æ˜¯ä½¿ç”¨ `TickType_t` ç±»å‹çš„å‚æ•°å’Œç›´æ¥ä½¿ç”¨æ¯«ç§’æ•°ã€‚è¿™ä¸¤ç§å½¢å¼çš„åŒºåˆ«åœ¨äºå®ƒä»¬å¦‚ä½•å¤„ç†æ—¶é—´å•ä½è½¬æ¢ã€‚
+1. **ä½¿ç”¨ `TickType_t` ç±»å‹çš„å‚æ•°**ï¼š
    ```c
    vTaskDelay(pdMS_TO_TICKS(COMP_LOOP_PERIOD));
    ```
-   - `pdMS_TO_TICKS()`£ºÕâÊÇÒ»¸öºê£¬Ëü½«¸ø¶¨µÄºÁÃëÊı×ª»»Îª FreeRTOS µÄÊ±ÖÓ½ÚÅÄÊı£¨ticks£©¡£FreeRTOS µÄÊ±ÖÓ½ÚÅÄÊÇ»ùÓÚÏµÍ³Ê±ÖÓµÄ£¬¶øÏµÍ³Ê±ÖÓµÄÆµÂÊÊÇÓÉÓ²¼şºÍÅäÖÃ¾ö¶¨µÄ¡£
-   - `vTaskDelay()`£ºÕâ¸öº¯Êı½ÓÊÜÒ»¸ö `TickType_t` ÀàĞÍµÄ²ÎÊı£¬±íÊ¾ÈÎÎñÓ¦¸ÃÔİÍ£µÄÊ±¼ä³¤¶È¡£Ëü»á¸ù¾İÏµÍ³Ê±ÖÓµÄÆµÂÊ½«ºÁÃëÊı×ª»»ÎªÊ±ÖÓ½ÚÅÄÊı£¬²¢Ê¹ÈÎÎñÔİÍ£ÏàÓ¦µÄÊ±¼ä¡£
-   Ê¹ÓÃÕâÖÖ·½Ê½£¬Äú¿ÉÒÔÈ·±£ `vTaskDelay()` ÄÜ¹»ÕıÈ·´¦Àí²»Í¬µÄÏµÍ³Ê±ÖÓÆµÂÊ£¬ÒòÎªËüÊÇÍ¨¹ıÊ±ÖÓ½ÚÅÄÊıÀ´¼ÆËãÔİÍ£Ê±¼äµÄ¡£
-2. **Ö±½ÓÊ¹ÓÃºÁÃëÊı**£º
+   - `pdMS_TO_TICKS()`ï¼šè¿™æ˜¯ä¸€ä¸ªå®ï¼Œå®ƒå°†ç»™å®šçš„æ¯«ç§’æ•°è½¬æ¢ä¸º FreeRTOS çš„æ—¶é’ŸèŠ‚æ‹æ•°ï¼ˆticksï¼‰ã€‚FreeRTOS çš„æ—¶é’ŸèŠ‚æ‹æ˜¯åŸºäºç³»ç»Ÿæ—¶é’Ÿçš„ï¼Œè€Œç³»ç»Ÿæ—¶é’Ÿçš„é¢‘ç‡æ˜¯ç”±ç¡¬ä»¶å’Œé…ç½®å†³å®šçš„ã€‚
+   - `vTaskDelay()`ï¼šè¿™ä¸ªå‡½æ•°æ¥å—ä¸€ä¸ª `TickType_t` ç±»å‹çš„å‚æ•°ï¼Œè¡¨ç¤ºä»»åŠ¡åº”è¯¥æš‚åœçš„æ—¶é—´é•¿åº¦ã€‚å®ƒä¼šæ ¹æ®ç³»ç»Ÿæ—¶é’Ÿçš„é¢‘ç‡å°†æ¯«ç§’æ•°è½¬æ¢ä¸ºæ—¶é’ŸèŠ‚æ‹æ•°ï¼Œå¹¶ä½¿ä»»åŠ¡æš‚åœç›¸åº”çš„æ—¶é—´ã€‚
+   ä½¿ç”¨è¿™ç§æ–¹å¼ï¼Œæ‚¨å¯ä»¥ç¡®ä¿ `vTaskDelay()` èƒ½å¤Ÿæ­£ç¡®å¤„ç†ä¸åŒçš„ç³»ç»Ÿæ—¶é’Ÿé¢‘ç‡ï¼Œå› ä¸ºå®ƒæ˜¯é€šè¿‡æ—¶é’ŸèŠ‚æ‹æ•°æ¥è®¡ç®—æš‚åœæ—¶é—´çš„ã€‚
+2. **ç›´æ¥ä½¿ç”¨æ¯«ç§’æ•°**ï¼š
    ```c
    vTaskDelay(1500 / portTICK_PERIOD_MS);
    ```
-   - `1500`£ºÕâÊÇÒ»¸öÕûÊı£¬±íÊ¾ÄúÏëÒªÔİÍ£µÄÈÎÎñÊ±¼ä£¬µ¥Î»ÊÇºÁÃë¡£
-   - `portTICK_PERIOD_MS`£ºÕâÊÇÒ»¸öºê£¬ËüÔÚ `FreeRTOSConfig.h` ÎÄ¼şÖĞ¶¨Òå£¬±íÊ¾ÏµÍ³Ê±ÖÓ½ÚÅÄµÄ³¤¶È£¨ÒÔºÁÃëÎªµ¥Î»£©¡£Õâ¸öÖµÍ¨³£ÊÇ¸ù¾İÓ²¼şÊ±ÖÓÆµÂÊºÍ FreeRTOS µÄÅäÖÃÀ´È·¶¨µÄ¡£
-   Ö±½ÓÊ¹ÓÃºÁÃëÊı×÷Îª²ÎÊıÊ±£¬`vTaskDelay()` »á½«ÄúÌá¹©µÄºÁÃëÊıÖ±½Ó×ª»»ÎªÊ±ÖÓ½ÚÅÄÊı£¬²¢Ê¹ÈÎÎñÔİÍ£ÏàÓ¦µÄÊ±¼ä¡£ÕâÖÖ·½·¨±È½ÏÖ±½Ó£¬µ«ĞèÒª×¢ÒâµÄÊÇ£¬Ëü¼ÙÉèÏµÍ³Ê±ÖÓ½ÚÅÄµÄ³¤¶ÈÊÇ¹Ì¶¨µÄ£¬Õâ¿ÉÄÜ»áµ¼ÖÂÔÚ²»Í¬µÄÏµÍ³ÅäÖÃÏÂ³öÏÖÊ±¼äÆ«²î¡£
-*ÔÚÊµ¼ÊÓ¦ÓÃÖĞ£¬½¨ÒéÊ¹ÓÃµÚÒ»ÖÖ·½·¨£¬¼´Ê¹ÓÃ `TickType_t` ÀàĞÍµÄ²ÎÊı£¬ÒòÎªËüÄÜ¹»¸ü×¼È·µØ´¦Àí²»Í¬µÄÏµÍ³Ê±ÖÓÆµÂÊ¡£
-Èç¹ûÏµÍ³Ê±ÖÓÆµÂÊ·¢Éú±ä»¯£¬»òÕßÄúÏëÒªÈ·±£ÔÚ²»Í¬Ó²¼şÆ½Ì¨ÉÏ´úÂëµÄÎÈ¶¨ĞÔºÍ¿ÉÒÆÖ²ĞÔ£¬Ê¹ÓÃÊ±ÖÓ½ÚÅÄÊıÊÇ¸üºÃµÄÑ¡Ôñ¡£
+   - `1500`ï¼šè¿™æ˜¯ä¸€ä¸ªæ•´æ•°ï¼Œè¡¨ç¤ºæ‚¨æƒ³è¦æš‚åœçš„ä»»åŠ¡æ—¶é—´ï¼Œå•ä½æ˜¯æ¯«ç§’ã€‚
+   - `portTICK_PERIOD_MS`ï¼šè¿™æ˜¯ä¸€ä¸ªå®ï¼Œå®ƒåœ¨ `FreeRTOSConfig.h` æ–‡ä»¶ä¸­å®šä¹‰ï¼Œè¡¨ç¤ºç³»ç»Ÿæ—¶é’ŸèŠ‚æ‹çš„é•¿åº¦ï¼ˆä»¥æ¯«ç§’ä¸ºå•ä½ï¼‰ã€‚è¿™ä¸ªå€¼é€šå¸¸æ˜¯æ ¹æ®ç¡¬ä»¶æ—¶é’Ÿé¢‘ç‡å’Œ FreeRTOS çš„é…ç½®æ¥ç¡®å®šçš„ã€‚
+   ç›´æ¥ä½¿ç”¨æ¯«ç§’æ•°ä½œä¸ºå‚æ•°æ—¶ï¼Œ`vTaskDelay()` ä¼šå°†æ‚¨æä¾›çš„æ¯«ç§’æ•°ç›´æ¥è½¬æ¢ä¸ºæ—¶é’ŸèŠ‚æ‹æ•°ï¼Œå¹¶ä½¿ä»»åŠ¡æš‚åœç›¸åº”çš„æ—¶é—´ã€‚è¿™ç§æ–¹æ³•æ¯”è¾ƒç›´æ¥ï¼Œä½†éœ€è¦æ³¨æ„çš„æ˜¯ï¼Œå®ƒå‡è®¾ç³»ç»Ÿæ—¶é’ŸèŠ‚æ‹çš„é•¿åº¦æ˜¯å›ºå®šçš„ï¼Œè¿™å¯èƒ½ä¼šå¯¼è‡´åœ¨ä¸åŒçš„ç³»ç»Ÿé…ç½®ä¸‹å‡ºç°æ—¶é—´åå·®ã€‚
+*åœ¨å®é™…åº”ç”¨ä¸­ï¼Œå»ºè®®ä½¿ç”¨ç¬¬ä¸€ç§æ–¹æ³•ï¼Œå³ä½¿ç”¨ `TickType_t` ç±»å‹çš„å‚æ•°ï¼Œå› ä¸ºå®ƒèƒ½å¤Ÿæ›´å‡†ç¡®åœ°å¤„ç†ä¸åŒçš„ç³»ç»Ÿæ—¶é’Ÿé¢‘ç‡ã€‚
+å¦‚æœç³»ç»Ÿæ—¶é’Ÿé¢‘ç‡å‘ç”Ÿå˜åŒ–ï¼Œæˆ–è€…æ‚¨æƒ³è¦ç¡®ä¿åœ¨ä¸åŒç¡¬ä»¶å¹³å°ä¸Šä»£ç çš„ç¨³å®šæ€§å’Œå¯ç§»æ¤æ€§ï¼Œä½¿ç”¨æ—¶é’ŸèŠ‚æ‹æ•°æ˜¯æ›´å¥½çš„é€‰æ‹©ã€‚
 
 
-´´½¨ÈÎÎñ
+åˆ›å»ºä»»åŠ¡
 TaskHandle_t proc_data_task_hdl;
-xTaskCreatePinnedToCore(proc_data_task, "proc_data_task", 4096, NULL, TASK_PRIO_3, &proc_data_task_hdl, tskNO_AFFINITY);//½ÓÊÕÊı¾İ
-xTaskCreatePinnedToCore(rcv_data_task, "rcv_data_task", 4096, proc_data_task_hdl, TASK_PRIO_3, NULL, tskNO_AFFINITY);//´¦ÀíÊı¾İ
+xTaskCreatePinnedToCore(proc_data_task, "proc_data_task", 4096, NULL, TASK_PRIO_3, &proc_data_task_hdl, tskNO_AFFINITY);//æ¥æ”¶æ•°æ®
+xTaskCreatePinnedToCore(rcv_data_task, "rcv_data_task", 4096, proc_data_task_hdl, TASK_PRIO_3, NULL, tskNO_AFFINITY);//å¤„ç†æ•°æ®
 
-&proc_data_task_hdl£ºÕâÊÇÖ¸Ïò proc_data_task_hdl ±äÁ¿µÄÖ¸Õë£¬ÓÃÓÚ½ÓÊÕĞÂ´´½¨ÈÎÎñµÄ¾ä±ú¡£
-tskNO_AFFINITY£ºÕâÊÇÈÎÎñµÄ CPU ºËĞÄ ID£¬±íÊ¾ÈÎÎñ²»°ó¶¨µ½ÌØ¶¨ºËĞÄ¡£
+&proc_data_task_hdlï¼šè¿™æ˜¯æŒ‡å‘ proc_data_task_hdl å˜é‡çš„æŒ‡é’ˆï¼Œç”¨äºæ¥æ”¶æ–°åˆ›å»ºä»»åŠ¡çš„å¥æŸ„ã€‚
+tskNO_AFFINITYï¼šè¿™æ˜¯ä»»åŠ¡çš„ CPU æ ¸å¿ƒ IDï¼Œè¡¨ç¤ºä»»åŠ¡ä¸ç»‘å®šåˆ°ç‰¹å®šæ ¸å¿ƒã€‚
 
-proc_data_task_hdl£ºÕâÊÇ´«µİ¸øÈÎÎñº¯ÊıµÄ²ÎÊı£¬ËüÊÇ proc_data_task ÈÎÎñµÄ¾ä±ú¡£
-Ê¹ÓÃ¾ÉµÄÃüÃûÔ¼¶¨ÊÇÎªÁË·ÀÖ¹ÆÆ»µÄÚºË¸ĞÖªµÄµ÷ÊÔÆ÷¡£
+proc_data_task_hdlï¼šè¿™æ˜¯ä¼ é€’ç»™ä»»åŠ¡å‡½æ•°çš„å‚æ•°ï¼Œå®ƒæ˜¯ proc_data_task ä»»åŠ¡çš„å¥æŸ„ã€‚
+ä½¿ç”¨æ—§çš„å‘½åçº¦å®šæ˜¯ä¸ºäº†é˜²æ­¢ç ´åå†…æ ¸æ„ŸçŸ¥çš„è°ƒè¯•å™¨ã€‚
 
 
 
