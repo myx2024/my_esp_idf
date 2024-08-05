@@ -8,10 +8,10 @@
 /*------------------------------------------------------------*/
 /* Macros */
 #define PROMPT_STR CONFIG_IDF_TARGET
-#define TASK_PRIO_3         3
+#define TASK_PRIO_3         3     //任务优先级
 #define TASK_PRIO_2         2
-#define COMP_LOOP_PERIOD    5000
-#define SEM_CREATE_ERR_STR                "semaphore creation failed"
+#define COMP_LOOP_PERIOD    5000  //组件循环周期
+#define SEM_CREATE_ERR_STR                "semaphore creation failed"//错误消息字符串，用于在创建信号量或队列失败时输出
 #define QUEUE_CREATE_ERR_STR              "queue creation failed"
 
 int comp_creating_task_entry_func(int argc, char **argv);

@@ -44,16 +44,16 @@ typedef struct {
 
 /**
  * @brief Parameters for console REPL (Read Eval Print Loop)
- *
+ * 控制台REPL的参数(读取Eval打印循环)
  */
 typedef struct {
-    uint32_t max_history_len;      //!< maximum length for the history
-    const char *history_save_path; //!< file path used to save history commands, set to NULL won't save to file system
-    uint32_t task_stack_size;      //!< repl task stack size
-    uint32_t task_priority;        //!< repl task priority
-    BaseType_t task_core_id;       //!< repl task affinity, i.e. which core the task is pinned to
-    const char *prompt;            //!< prompt (NULL represents default: "esp> ")
-    size_t max_cmdline_length;     //!< maximum length of a command line. If 0, default value will be used
+    uint32_t max_history_len;      //!< maximum length for the history 历史记录的最大长度
+    const char *history_save_path; //!< file path used to save history commands, set to NULL won't save to file system 用于保存历史命令的文件路径，设置为NULL将不保存到文件系统
+    uint32_t task_stack_size;      //!< repl task stack size   Repl任务堆栈大小
+    uint32_t task_priority;        //!< repl task priority     Repl任务优先级
+    BaseType_t task_core_id;       //!< repl task affinity, i.e. which core the task is pinned to   Repl任务关联，即任务被固定到哪个核心
+    const char *prompt;            //!< prompt (NULL represents default: "esp> ")   提示符(NULL表示默认值:"esp> ")
+    size_t max_cmdline_length;     //!< maximum length of a command line. If 0, default value will be used  命令行的最大长度。如果为0，则使用默认值
 } esp_console_repl_config_t;
 
 /**
