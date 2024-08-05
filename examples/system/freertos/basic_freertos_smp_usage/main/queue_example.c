@@ -20,7 +20,7 @@ static void print_q_msg(void *arg)
     int to_wait_ms = 1000;  // 从队列接收数据时的最大阻塞等待时间（毫秒）the maximal blocking waiting time of millisecond
     const TickType_t xTicksToWait = pdMS_TO_TICKS(to_wait_ms);//将毫秒转换为系统时钟节拍数,用于队列接收函数的阻塞时间
 
-    while (!timed_out) {
+    while (!timed_out) {//timed_out控制任务停止
         if (xQueueReceive(msg_queue, (void *)&data, xTicksToWait) == pdTRUE) {//从队列中接收数据
             ESP_LOGI(TAG, "received data = %d", data);
         } else {//在指定的等待时间内没有接收到数据
